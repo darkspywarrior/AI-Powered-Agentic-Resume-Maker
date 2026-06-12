@@ -1,0 +1,6 @@
+{
+  "name": "Agentic ATS Resume Optimizer",
+  "description": "An AI-powered agentic resume optimizer that analyzes job descriptions, extracts ATS keywords, provides section-by-section tailoring, identifies skill gaps, and recommends career enhancements for ATS success.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
