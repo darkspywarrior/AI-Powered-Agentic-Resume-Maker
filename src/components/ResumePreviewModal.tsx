@@ -4,7 +4,13 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { X, Printer, Download, Eye, ZoomIn, ZoomOut, FileText, CheckCircle } from "lucide-react";
+import { X, Printer, Download, Eye, ZoomIn, ZoomOut, FileText, CheckCircle, RefreshCw } from "lucide-react";
+import { 
+  googleSignInForDrive, 
+  getCachedAccessToken, 
+  uploadFileToDrive, 
+  initDriveAuth 
+} from "../lib/drive";
 
 interface ResumePreviewModalProps {
   isOpen: boolean;
@@ -34,6 +40,59 @@ export default function ResumePreviewModal({
   const [template, setTemplate] = useState<"classic" | "modern" | "tech">(initialTemplate);
   const [zoomScale, setZoomScale] = useState<number>(0.75); // Scaled-down default for perfect fitting
   const [srcDoc, setSrcDoc] = useState<string>("");
+
+  // Google Drive integrations
+  const [driveToken, setDriveToken] = useState<string | null>(null);
+  const [isSavingToDrive, setIsSavingToDrive] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = initDriveAuth(
+      (user, token) => {
+        setDriveToken(token);
+      },
+      () => {
+        setDriveToken(null);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  const handleSaveToDrive = async () => {
+    let currentToken = driveToken || getCachedAccessToken();
+    if (!currentToken) {
+      try {
+        const res = await googleSignInForDrive();
+        if (res) {
+          currentToken = res.accessToken;
+          setDriveToken(res.accessToken);
+        }
+      } catch (err) {
+        setSaveStatus({ type: "error", message: "Google account connection failed." });
+        return;
+      }
+    }
+
+    if (!currentToken) return;
+
+    setIsSavingToDrive(true);
+    setSaveStatus(null);
+
+    try {
+      const displayTemplate = template.charAt(0).toUpperCase() + template.slice(1);
+      const safeName = (contactName || "Resume").trim().replace(/\s+/g, "_");
+      const fileName = `${safeName}_Optimized_Resume_${displayTemplate}.html`;
+      
+      await uploadFileToDrive(currentToken, fileName, "text/html", srcDoc);
+      setSaveStatus({ type: "success", message: `Saved "${fileName}" to Google Drive successfully!` });
+      setTimeout(() => setSaveStatus(null), 7000);
+    } catch (err: any) {
+      console.error(err);
+      setSaveStatus({ type: "error", message: `Upload failed: ${err.message || "Network Error"}` });
+    } finally {
+      setIsSavingToDrive(false);
+    }
+  };
 
   useEffect(() => {
     if (initialTemplate) {
@@ -346,11 +405,23 @@ export default function ResumePreviewModal({
         {/* Footer Actions */}
         <div className="border-t border-slate-150 px-6 py-4 bg-slate-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-b-2xl">
           <div className="flex items-center gap-1.5 text-xs text-slate-500">
-            <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
-            <span>High-fidelity print styles are preserved perfectly within final exports.</span>
+            {saveStatus ? (
+              <span className={`px-2.5 py-1 rounded-md font-medium text-xs border ${
+                saveStatus.type === "success" 
+                  ? "bg-emerald-50 border-emerald-100 text-emerald-800 animate-pulse" 
+                  : "bg-rose-50 border-rose-100 text-rose-800"
+              }`} id="gdrive-save-status">
+                {saveStatus.message}
+              </span>
+            ) : (
+              <>
+                <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
+                <span>High-fidelity print styles are preserved perfectly within final exports.</span>
+              </>
+            )}
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
             <button
               type="button"
               onClick={onClose}
@@ -358,6 +429,24 @@ export default function ResumePreviewModal({
             >
               Back to Audit
             </button>
+            
+            <button
+              type="button"
+              onClick={handleSaveToDrive}
+              disabled={isSavingToDrive}
+              className="px-4 py-2 bg-slate-100 text-slate-800 border border-slate-250 font-bold hover:bg-slate-200 disabled:opacity-50 inline-flex items-center gap-1.5 rounded-lg text-xs transition cursor-pointer select-none"
+              id="btn-save-to-gdrive"
+            >
+              {isSavingToDrive ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin text-slate-500" />
+              ) : (
+                <svg viewBox="0 0 24 24" className="w-4 h-4 text-emerald-600" fill="currentColor">
+                  <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z" />
+                </svg>
+              )}
+              <span>{isSavingToDrive ? "Saving to GDrive..." : "Save to Google Drive"}</span>
+            </button>
+
             <button
               type="button"
               onClick={() => {
